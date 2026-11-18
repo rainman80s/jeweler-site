@@ -3,7 +3,7 @@
 Everything you need to run, host, and keep building this store, including how to have Claude pick up where we left off.
 
 > **TL;DR**
-> - Live site: **https://jeweler-site.ranenbothel.workers.dev** · Admin ("HQ"): **/admin**
+> - Live site: **https://jeweler-site.eliasbothel.workers.dev** · Admin ("HQ"): **/admin**
 > - Code: **github.com/rainman80s/jeweler-site**, branch `claude/wonderful-albattani-zfq49z`
 > - Hosting: one Cloudflare Worker + a D1 database + an R2 image bucket
 > - Pushing to GitHub deploys automatically (GitHub Actions)
@@ -31,7 +31,7 @@ By default nothing goes live without approval (`AUTO_PUBLISH = "false"` in `wran
 | Thing | Where | Who owns it now | Notes |
 |---|---|---|---|
 | Code | GitHub `rainman80s/jeweler-site` | original builder (ask them) | Ask to be added as a collaborator (repo Settings → Collaborators) |
-| Hosting | Cloudflare account `1719e73f…` (in `wrangler.toml`) | original builder (ask them) | Ask to be invited (dash.cloudflare.com → Manage Account → Members), or move it to your own account (§9) |
+| Hosting | Cloudflare account `0e7efdfc…` (in `wrangler.toml`) | Elias | Ask to be invited (dash.cloudflare.com → Manage Account → Members), or move it to your own account (§9) |
 | Admin login | `/admin` → **admins** tab | — | The original builder adds you there; change your password on the same tab |
 | Apify | console.apify.com | original builder (ask them) | Powers Instagram and marketplace scraping. Pay-per-result, cents per run |
 | OpenAI | platform.openai.com | **you, not set up yet** | Optional. Step-by-step in HQ → **setup** |
@@ -215,7 +215,7 @@ Swap actors in `DEFAULT_ACTORS` (apify.ts) and their input shape in `INPUTS` (su
 ## 9. Moving hosting to your own Cloudflare account
 
 There's a one-time GitHub workflow for this: **Actions → "Move to another Cloudflare account (one-time)" → Run workflow**.
-0. In the new account's dashboard, open **R2 Object Storage** and enable it once (new accounts must; the free tier covers this store). Otherwise image storage can't be created.
+0. In the new account's dashboard: **Compute → Workers & Pages → Account details → Subdomain** to register a workers.dev subdomain, and open **R2 Object Storage** and enable it once (new accounts must; the free tier covers this store). Otherwise image storage can't be created.
 1. Add the new account's token as repo secret `NEW_CLOUDFLARE_API_TOKEN` (template **Edit Cloudflare Workers** + **Account → D1 → Edit**).
 2. Run the workflow with the new **account ID**. It exports D1 from the old account, creates `jeweler-db` and `jeweler-media` in the new one, imports all rows (admins, products, orders, settings), and copies every referenced image from the old live site. The run summary shows the new `database_id`.
 3. Update `wrangler.toml` (`account_id`, `database_id`) and make `deploy.yml` use the new token; push, and it deploys to the new account.
