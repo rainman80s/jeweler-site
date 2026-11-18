@@ -76,3 +76,8 @@ Everything works with no `OPENAI_API_KEY`:
 - **Listings**: titles are cleaned from the supplier title; descriptions use on-brand templates.
 - **Images**: with `image_mode = "manual"` (default), the system queues ready-to-paste prompts in **HQ → image prompts**. Run them in ChatGPT with the reference photo attached and upload the result — model shots become the lead photo, flat lays are appended, ad images become creatives.
 - **Products → + add product** lets you list anything by hand with uploaded photos or pasted image links.
+
+## Automatic deploys
+Every push to `main` or the working branch runs `.github/workflows/deploy.yml`: typecheck → update D1 tables (`schema.sql` is idempotent) → `wrangler deploy`.
+One-time setup: create a Cloudflare API token (template **Edit Cloudflare Workers**, plus **Account → D1 → Edit**) and save it as the repo secret `CLOUDFLARE_API_TOKEN`.
+You can also re-run a deploy from GitHub → Actions → Deploy to Cloudflare → Run workflow.

@@ -1,5 +1,6 @@
 name = "jeweler-site"
 main = "src/index.ts"
+account_id = "1719e73f690786576d110b1212e04645"
 compatibility_date = "2024-11-01"
 compatibility_flags = ["nodejs_compat"]
 workers_dev = true
