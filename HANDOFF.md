@@ -212,12 +212,11 @@ Swap actors in `DEFAULT_ACTORS` (apify.ts) and their input shape in `INPUTS` (su
 
 ---
 
-## 9. Moving hosting to your own Cloudflare account (optional)
+## 9. Moving hosting to your own Cloudflare account
 
-1. Create a Cloudflare account and run `npx wrangler login` as you.
-2. `npx wrangler d1 create jeweler-db` → put the new `database_id` in `wrangler.toml`; change `account_id` to yours.
-3. `npx wrangler r2 bucket create jeweler-media`
-4. **Copy the data:** on the old account run `npx wrangler d1 export jeweler-db --remote --output=backup.sql`, then on the new one `npx wrangler d1 execute jeweler-db --remote --file=backup.sql`. Images in R2 have to be copied too (rclone, or start fresh).
-5. Re-add all secrets (§2) on the new Worker.
-6. Replace the GitHub secret `CLOUDFLARE_API_TOKEN` with a token from your account.
-7. Push → it deploys to your account. Update the Stripe webhook and Apify will use the new address automatically (the site records its own address when you open HQ).
+There's a one-time GitHub workflow for this: **Actions → "Move to another Cloudflare account (one-time)" → Run workflow**.
+1. Add the new account's token as repo secret `NEW_CLOUDFLARE_API_TOKEN` (template **Edit Cloudflare Workers** + **Account → D1 → Edit**).
+2. Run the workflow with the new **account ID**. It exports D1 from the old account, creates `jeweler-db` and `jeweler-media` in the new one, imports all rows (admins, products, orders, settings), and copies every referenced image from the old live site. The run summary shows the new `database_id`.
+3. Update `wrangler.toml` (`account_id`, `database_id`) and make `deploy.yml` use the new token; push, and it deploys to the new account.
+4. Re-add the Worker secrets on the new account (§2). Admin logins carry over because they live in the database.
+5. Open the new site's `/admin` once (this records the new address for Apify webhooks), update the Stripe webhook URL, then delete the old Worker so its hourly cron stops.

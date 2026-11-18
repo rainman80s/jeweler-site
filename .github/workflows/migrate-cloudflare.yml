@@ -1,0 +1,48 @@
+name: Move to another Cloudflare account (one-time)
+
+# Copies the database and images from the current Cloudflare account to a new one.
+# Needs repo secrets:
+#   CLOUDFLARE_API_TOKEN      – token for the CURRENT (old) account
+#   NEW_CLOUDFLARE_API_TOKEN  – token for the NEW account (Edit Cloudflare Workers template + Account › D1 › Edit)
+# After it succeeds: point wrangler.toml at the new account_id/database_id and push (deploy.yml then uses the new token).
+
+on:
+  workflow_dispatch:
+    inputs:
+      new_account_id:
+        description: "New Cloudflare account ID"
+        required: true
+      old_site_url:
+        description: "Current live site (images are copied from here)"
+        required: true
+        default: "https://jeweler-site.ranenbothel.workers.dev"
+      force:
+        description: "Overwrite if the new account's database already has data"
+        type: boolean
+        default: false
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Check secrets
+        env:
+          OLD: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          NEW: ${{ secrets.NEW_CLOUDFLARE_API_TOKEN }}
+        run: |
+          [ -n "$OLD" ] || { echo "::error::CLOUDFLARE_API_TOKEN (old account) is missing"; exit 1; }
+          [ -n "$NEW" ] || { echo "::error::Add NEW_CLOUDFLARE_API_TOKEN (Elias's Cloudflare token) in repo Settings → Secrets → Actions"; exit 1; }
+      - name: Migrate
+        env:
+          OLD_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          NEW_TOKEN: ${{ secrets.NEW_CLOUDFLARE_API_TOKEN }}
+          NEW_ACCOUNT_ID: ${{ inputs.new_account_id }}
+          OLD_SITE_URL: ${{ inputs.old_site_url }}
+          FORCE: ${{ inputs.force }}
+        run: ./scripts/migrate-cloudflare.sh
