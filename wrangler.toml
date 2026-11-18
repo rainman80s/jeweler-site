@@ -1,6 +1,6 @@
 name = "jeweler-site"
 main = "src/index.ts"
-account_id = "1719e73f690786576d110b1212e04645"
+account_id = "0e7efdfcac83102f10984422342ce124"   # Elias's Cloudflare account
 compatibility_date = "2024-11-01"
 compatibility_flags = ["nodejs_compat"]
 workers_dev = true
@@ -15,7 +15,7 @@ run_worker_first = ["/api/*", "/img/*"]
 [[d1_databases]]
 binding = "DB"
 database_name = "jeweler-db"
-database_id = "9dac0e49-59ca-411c-80c6-9195c5950a01"
+database_id = "4e960946-c7a6-494c-87cb-97a1a6a975fd"
 
 [[r2_buckets]]
 binding = "MEDIA"

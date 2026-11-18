@@ -215,6 +215,7 @@ Swap actors in `DEFAULT_ACTORS` (apify.ts) and their input shape in `INPUTS` (su
 ## 9. Moving hosting to your own Cloudflare account
 
 There's a one-time GitHub workflow for this: **Actions → "Move to another Cloudflare account (one-time)" → Run workflow**.
+0. In the new account's dashboard, open **R2 Object Storage** and enable it once (new accounts must; the free tier covers this store). Otherwise image storage can't be created.
 1. Add the new account's token as repo secret `NEW_CLOUDFLARE_API_TOKEN` (template **Edit Cloudflare Workers** + **Account → D1 → Edit**).
 2. Run the workflow with the new **account ID**. It exports D1 from the old account, creates `jeweler-db` and `jeweler-media` in the new one, imports all rows (admins, products, orders, settings), and copies every referenced image from the old live site. The run summary shows the new `database_id`.
 3. Update `wrangler.toml` (`account_id`, `database_id`) and make `deploy.yml` use the new token; push, and it deploys to the new account.
