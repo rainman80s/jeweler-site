@@ -124,6 +124,20 @@ admin.get("/overview", async (c) => {
   return c.json({ kpi, funnel: funnel.results, top: top.results.map(hydrate), jobs: jobs.results });
 });
 
+// Which integrations are configured (booleans only — never returns values)
+admin.get("/setup", (c) => {
+  const e = c.env;
+  return c.json({
+    origin: new URL(c.req.url).origin,
+    apify: !!e.APIFY_TOKEN,
+    openai: !!e.OPENAI_API_KEY,
+    stripe: !!e.STRIPE_SECRET_KEY,
+    stripe_webhook: !!e.STRIPE_WEBHOOK_SECRET,
+    cj: !!e.CJ_API_KEY,
+    aliexpress: !!(e.ALIEXPRESS_APP_KEY && e.ALIEXPRESS_APP_SECRET),
+  });
+});
+
 admin.get("/trends", async (c) => c.json((await c.env.DB.prepare("SELECT * FROM trends ORDER BY momentum DESC LIMIT 100").all()).results));
 admin.get("/signals", async (c) => c.json((await c.env.DB.prepare("SELECT * FROM trend_signals ORDER BY score DESC LIMIT 60").all()).results));
 admin.patch("/trends/:id", async (c) => {

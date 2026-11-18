@@ -20,12 +20,75 @@ function login() {
   };
 }
 
+const SECRET_HOWTO = (name) => `
+  <ol>
+    <li>Go to <a href="https://dash.cloudflare.com" target="_blank">dash.cloudflare.com</a> → <b>Workers &amp; Pages</b> → <b>jeweler-site</b>.</li>
+    <li>Open <b>Settings</b> → <b>Variables and Secrets</b> → <b>+ Add</b>.</li>
+    <li>Type: <b>Secret</b>. Variable name: <code>${name}</code> (exactly like that, all caps). Value: paste the key.</li>
+    <li>Click <b>Deploy</b>. Come back here and refresh — the badge turns green.</li>
+  </ol>
+  <p class="note">Only the <b>name</b> goes in the name box. The key itself only goes in the value box — never paste a key into a name, a chat, or an email.</p>`;
+
 const tabs = {
+  async setup(m) {
+    const s = await api("/setup");
+    const badge = (on) => `<span class="pill ${on ? "ok" : "error"}">${on ? "connected" : "not set up"}</span>`;
+    m.innerHTML = `<h2>setup</h2>
+      <div class="panel"><table>
+        <tr><td>Instagram trend scanning (Apify)</td><td>${badge(s.apify)}</td></tr>
+        <tr><td>AI listings &amp; images (OpenAI)</td><td>${badge(s.openai)}</td></tr>
+        <tr><td>Checkout (Stripe)</td><td>${badge(s.stripe)}</td></tr>
+        <tr><td>Order confirmation (Stripe webhook)</td><td>${badge(s.stripe_webhook)}</td></tr>
+        <tr><td>Auto-ordering: CJ Dropshipping</td><td>${badge(s.cj)}</td></tr>
+        <tr><td>Auto-ordering: AliExpress</td><td>${badge(s.aliexpress)}</td></tr>
+      </table></div>
+
+      <div class="panel guide"><h3>1 · OpenAI — writes listings, makes model photos &amp; ads ${badge(s.openai)}</h3>
+        <ol>
+          <li>Create an account at <a href="https://platform.openai.com/signup" target="_blank">platform.openai.com</a> (this is the developer platform — separate from a ChatGPT subscription).</li>
+          <li><b>Add billing:</b> Settings → <a href="https://platform.openai.com/settings/organization/billing/overview" target="_blank">Billing</a> → add a card and buy credits ($10–20 is plenty to start).</li>
+          <li><b>Set a spending cap:</b> Settings → <a href="https://platform.openai.com/settings/organization/limits" target="_blank">Limits</a> → set a monthly budget (e.g. $50) so the autopilot can never run up a surprise bill.</li>
+          <li><b>Verify your organization:</b> Settings → <a href="https://platform.openai.com/settings/organization/general" target="_blank">General</a> → <b>Verify Organization</b>. OpenAI requires this before its image model works — skip it and listings get made without AI photos.</li>
+          <li><b>Create the key:</b> <a href="https://platform.openai.com/api-keys" target="_blank">API keys</a> → <b>Create new secret key</b> → name it "glint" → copy it (starts with <code>sk-</code>). You only see it once.</li>
+          <li>Add it to the site:</li>
+        </ol>
+        ${SECRET_HOWTO("OPENAI_API_KEY")}
+        <p class="note">Rough cost: ~$0.05–0.25 per AI photo, pennies per listing description.</p>
+      </div>
+
+      <div class="panel guide"><h3>2 · Stripe — takes payments ${badge(s.stripe)}</h3>
+        <ol>
+          <li>Create an account at <a href="https://dashboard.stripe.com/register" target="_blank">dashboard.stripe.com/register</a>.</li>
+          <li><b>Activate payments:</b> the dashboard will ask for business details, ID and a bank account for payouts. You can use <b>Test mode</b> (toggle top-right) while that's pending.</li>
+          <li><b>Get the secret key:</b> Developers → <a href="https://dashboard.stripe.com/apikeys" target="_blank">API keys</a> → <b>Secret key</b> → Reveal → copy. In test mode it starts with <code>sk_test_</code>, live is <code>sk_live_</code>.</li>
+          <li>Add it to the site:</li>
+        </ol>
+        ${SECRET_HOWTO("STRIPE_SECRET_KEY")}
+      </div>
+
+      <div class="panel guide"><h3>3 · Stripe webhook — tells the site an order was paid ${badge(s.stripe_webhook)}</h3>
+        <p class="note">Without this, payments go through but orders never get marked paid or sent to the supplier.</p>
+        <ol>
+          <li>Stripe → Developers → <a href="https://dashboard.stripe.com/webhooks" target="_blank">Webhooks</a> → <b>Add destination</b> (or "Add endpoint").</li>
+          <li>Event to send: <code>checkout.session.completed</code>.</li>
+          <li>Endpoint URL: <code id="wh">${esc(s.origin)}/api/stripe/webhook</code> <button class="ghost" id="copywh">copy</button></li>
+          <li>Save, then on the webhook's page click <b>Reveal</b> under <b>Signing secret</b> and copy it (starts with <code>whsec_</code>).</li>
+          <li>Add it to the site:</li>
+        </ol>
+        ${SECRET_HOWTO("STRIPE_WEBHOOK_SECRET")}
+        <p class="note">Test it: in test mode, buy something on the store with card <code>4242 4242 4242 4242</code>, any future date, any CVC. The order should show up as <b>paid</b> in the orders tab.</p>
+        <p class="note">Going live later: switch Stripe out of test mode, then replace <code>STRIPE_SECRET_KEY</code> with the <code>sk_live_</code> key and make a new webhook in live mode (it has its own signing secret).</p>
+      </div>`;
+    m.querySelector("#copywh").onclick = (e) => { navigator.clipboard.writeText(m.querySelector("#wh").textContent); e.target.textContent = "copied ✓"; };
+  },
   async dashboard(m) {
-    const d = await api("/overview"); const k = d.kpi || {};
+    const [d, s] = await Promise.all([api("/overview"), api("/setup")]);
+    const k = d.kpi || {};
+    const missing = [!s.openai && "OpenAI", !s.stripe && "Stripe", !s.stripe_webhook && "Stripe webhook"].filter(Boolean);
     const f = Object.fromEntries(d.funnel.map((x) => [x.type, x.n]));
     const runBtn = (j, l) => `<button class="ghost" data-job="${j}">▶ ${l}</button>`;
     m.innerHTML = `<h2>dashboard</h2>
+      ${missing.length ? `<div class="panel" style="border-color:var(--pink)">⚠️ Not connected yet: <b>${missing.join(", ")}</b>. <a href="#setup" style="color:var(--lime)" onclick="setTimeout(()=>location.reload())">Open setup →</a></div>` : ""}
       <div class="kpis">
         <div class="kpi"><small>revenue · 30d</small><b>${money(k.revenue)}</b></div>
         <div class="kpi"><small>orders · 30d</small><b>${k.orders ?? 0}</b></div>
