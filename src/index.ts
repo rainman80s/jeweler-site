@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { setCookie, deleteCookie } from "hono/cookie";
 import type { Env } from "./env";
-import { ensureBootstrapAdmin, requireAdmin, verifyPassword } from "./lib/auth";
+import { ensureBootstrapAdmin, hashPassword, requireAdmin, verifyPassword } from "./lib/auth";
 import { j, logJob, now, uid } from "./lib/util";
 import { stripe, verifyStripeSig } from "./integrations/stripe";
 import { fulfillOrder } from "./agents/fulfillment";
@@ -105,7 +105,7 @@ app.post("/api/auth/login", async (c) => {
 app.post("/api/auth/logout", async (c) => { deleteCookie(c, "sid", { path: "/" }); return c.json({ ok: true }); });
 
 // ---------- Admin API
-const admin = new Hono<{ Bindings: Env }>();
+const admin = new Hono<{ Bindings: Env; Variables: { userId: string } }>();
 admin.use("*", requireAdmin);
 
 admin.get("/overview", async (c) => {
@@ -122,6 +122,39 @@ admin.get("/overview", async (c) => {
     c.env.DB.prepare("SELECT * FROM job_runs ORDER BY started_at DESC LIMIT 15").all(),
   ]);
   return c.json({ kpi, funnel: funnel.results, top: top.results.map(hydrate), jobs: jobs.results });
+});
+
+// ---------- Admin users
+admin.get("/users", async (c) => {
+  const { results } = await c.env.DB.prepare("SELECT id,email,created_at FROM users ORDER BY created_at").all<any>();
+  return c.json({ me: c.get("userId"), users: results });
+});
+admin.post("/users", async (c) => {
+  const { email, password } = await c.req.json<any>();
+  const em = String(email ?? "").trim().toLowerCase();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)) return c.json({ error: "enter a valid email" }, 400);
+  if (String(password ?? "").length < 10) return c.json({ error: "password must be at least 10 characters" }, 400);
+  const exists = await c.env.DB.prepare("SELECT 1 FROM users WHERE email=?").bind(em).first();
+  if (exists) return c.json({ error: "that email is already an admin" }, 400);
+  await c.env.DB.prepare("INSERT INTO users (id,email,pass_hash) VALUES (?,?,?)").bind(crypto.randomUUID(), em, await hashPassword(password)).run();
+  return c.json({ ok: true });
+});
+admin.delete("/users/:id", async (c) => {
+  const id = c.req.param("id");
+  if (id === c.get("userId")) return c.json({ error: "you can't remove yourself" }, 400);
+  await c.env.DB.batch([
+    c.env.DB.prepare("DELETE FROM sessions WHERE user_id=?").bind(id),
+    c.env.DB.prepare("DELETE FROM users WHERE id=?").bind(id),
+  ]);
+  return c.json({ ok: true });
+});
+admin.post("/users/me/password", async (c) => {
+  const { current, next } = await c.req.json<any>();
+  const u = await c.env.DB.prepare("SELECT pass_hash FROM users WHERE id=?").bind(c.get("userId")).first<any>();
+  if (!u || !(await verifyPassword(String(current ?? ""), u.pass_hash))) return c.json({ error: "current password is wrong" }, 400);
+  if (String(next ?? "").length < 10) return c.json({ error: "new password must be at least 10 characters" }, 400);
+  await c.env.DB.prepare("UPDATE users SET pass_hash=? WHERE id=?").bind(await hashPassword(next), c.get("userId")).run();
+  return c.json({ ok: true });
 });
 
 // Which integrations are configured (booleans only — never returns values)

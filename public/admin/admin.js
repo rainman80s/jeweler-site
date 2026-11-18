@@ -156,6 +156,33 @@ const tabs = {
         <h3 style="margin:8px 0 4px">${esc(b.headline)}</h3><p style="color:var(--muted)">${esc(b.primary_text)}</p><p style="margin-top:8px"><b>hook:</b> ${esc(b.hook)}</p><small>${esc(x.title)}</small></div>`; }).join("") || "<p>no creatives yet</p>"}</div>`;
     m.querySelector("[data-job]").onclick = () => api("/jobs/marketing", { method: "POST" });
   },
+  async admins(m) {
+    const { me, users } = await api("/users");
+    m.innerHTML = `<h2>admins</h2>
+      <div class="panel"><table><tr><th>email</th><th>added</th><th></th></tr>
+        ${users.map((u) => `<tr><td>${esc(u.email)}${u.id === me ? ' <span class="pill ok">you</span>' : ""}</td><td>${new Date(u.created_at * 1000).toLocaleDateString()}</td>
+          <td>${u.id === me ? "" : `<button class="red" data-del="${u.id}" data-em="${esc(u.email)}">remove</button>`}</td></tr>`).join("")}</table></div>
+      <form class="panel" id="add"><h3>add an admin</h3>
+        <label>email</label><input name="email" type="email" required>
+        <label>temporary password <small>(10+ characters — they can change it after logging in)</small></label><input name="password" type="text" minlength="10" required autocomplete="off">
+        <button style="margin-top:14px">add admin</button> <span class="msg"></span></form>
+      <form class="panel" id="pw"><h3>change my password</h3>
+        <label>current password</label><input name="current" type="password" required>
+        <label>new password <small>(10+ characters)</small></label><input name="next" type="password" minlength="10" required>
+        <button style="margin-top:14px">update password</button> <span class="msg"></span></form>`;
+    const send = (sel, path, after) => (m.querySelector(sel).onsubmit = async (e) => {
+      e.preventDefault();
+      const r = await api(path, { method: "POST", body: Object.fromEntries(new FormData(e.target)) });
+      const msg = e.target.querySelector(".msg");
+      if (r.error) { msg.style.color = "var(--red)"; msg.textContent = r.error; } else after(e.target, msg);
+    });
+    send("#add", "/users", () => tabs.admins(m));
+    send("#pw", "/users/me/password", (f, msg) => { f.reset(); msg.style.color = "var(--lime)"; msg.textContent = "password updated ✓"; });
+    m.querySelectorAll("[data-del]").forEach((b) => (b.onclick = async () => {
+      if (!confirm(`Remove ${b.dataset.em} as an admin?`)) return;
+      await api("/users/" + b.dataset.del, { method: "DELETE" }); tabs.admins(m);
+    }));
+  },
   async settings(m) {
     const s = await api("/settings");
     const field = (k, label, help = "") => `<label>${label} <small>${help}</small></label><textarea rows="2" name="${k}">${esc(JSON.stringify(s[k]))}</textarea>`;

@@ -26,10 +26,11 @@ export async function ensureBootstrapAdmin(env: Env) {
     .bind(crypto.randomUUID(), env.ADMIN_BOOTSTRAP_EMAIL.toLowerCase(), await hashPassword(env.ADMIN_BOOTSTRAP_PASSWORD)).run();
 }
 
-export async function requireAdmin(c: Context<{ Bindings: Env }>, next: Next) {
+export async function requireAdmin(c: Context<{ Bindings: Env; Variables: { userId: string } }>, next: Next) {
   const sid = getCookie(c, "sid");
   if (!sid) return c.json({ error: "unauthorized" }, 401);
-  const s = await c.env.DB.prepare("SELECT user_id FROM sessions WHERE id=? AND expires_at>?").bind(sid, now()).first();
+  const s = await c.env.DB.prepare("SELECT user_id FROM sessions WHERE id=? AND expires_at>?").bind(sid, now()).first<{ user_id: string }>();
   if (!s) return c.json({ error: "unauthorized" }, 401);
+  c.set("userId", s.user_id);
   await next();
 }
