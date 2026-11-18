@@ -40,7 +40,7 @@ export async function buildListings(env: Env, limit = 3) {
          wearing THIS exact piece, natural light, phone-camera aesthetic, close crop)}`,
         `Supplier title: ${c.title}\nTrend: ${c.keyword}\nSupplier data: ${String(c.raw).slice(0, 1500)}`);
     } else {
-      copy = templateCopy(cleanTitle(c.title), categoryOf(c.title + " " + (c.keyword ?? "")));
+      copy = templateCopy(cleanTitle(c.title), categoryOf(c.title) ?? categoryOf(c.keyword ?? "") ?? "necklaces");
     }
 
     const images: string[] = [];

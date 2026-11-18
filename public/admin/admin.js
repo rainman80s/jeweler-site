@@ -165,8 +165,9 @@ const tabs = {
         <button style="margin-top:14px">add product</button> <span class="msg"></span>
       </form>
       <div class="panel"><table>
-      <tr><th></th><th>title</th><th>price</th><th>cost</th><th>margin</th><th>status</th><th></th></tr>
+      <tr><th></th><th>title</th><th>category</th><th>price</th><th>cost</th><th>margin</th><th>status</th><th></th></tr>
       ${p.map((x) => `<tr><td><img src="${x.images[0] || ""}"></td><td><a href="/p/${x.slug}" target="_blank">${esc(x.title)}</a>${x.featured ? " ★" : ""}<br><small style="color:var(--muted)">${x.images.length} photo${x.images.length === 1 ? "" : "s"}${x.supplier_url ? ` · <a href="${esc(x.supplier_url)}" target="_blank" style="color:var(--lilac)">supplier ↗</a>` : ""}</small></td>
+        <td><select data-cat="${x.id}" style="width:120px">${["earrings", "necklaces", "rings", "bracelets", "sets"].map((c) => `<option ${c === x.category ? "selected" : ""}>${c}</option>`).join("")}</select></td>
         <td><input style="width:90px" value="${(x.price_cents / 100).toFixed(2)}" data-price="${x.id}"></td><td>${money(x.cost_cents)}</td>
         <td>${x.cost_cents ? Math.round((1 - x.cost_cents / x.price_cents) * 100) + "%" : "—"}</td><td><span class="pill ${x.status}">${x.status}</span></td>
         <td style="white-space:nowrap">${x.status !== "active" ? `<button data-p="${x.id}" data-s="active">publish</button>` : `<button class="ghost" data-p="${x.id}" data-s="archived">archive</button>`}
@@ -183,6 +184,7 @@ const tabs = {
     m.querySelector("[data-job]").onclick = () => api("/jobs/listing", { method: "POST" });
     m.querySelectorAll("[data-p]").forEach((b) => (b.onclick = async () => { await patch("/products/" + b.dataset.p, { status: b.dataset.s }); tabs.products(m); }));
     m.querySelectorAll("[data-price]").forEach((i) => (i.onchange = () => patch("/products/" + i.dataset.price, { price_cents: Math.round(+i.value * 100) })));
+    m.querySelectorAll("[data-cat]").forEach((i) => (i.onchange = async () => { await patch("/products/" + i.dataset.cat, { category: i.value }); i.style.borderColor = "var(--lime)"; }));
     m.querySelectorAll("[data-prompts]").forEach((b) => (b.onclick = async () => { await api("/image-prompts/product/" + b.dataset.prompts, { method: "POST" }); b.textContent = "✓ see image prompts tab"; }));
     m.querySelectorAll("[data-up]").forEach((i) => (i.onchange = async () => {
       const fd = new FormData(); [...i.files].forEach((file) => fd.append("images", file));

@@ -167,7 +167,8 @@ admin.post("/products", async (c) => {
   const title = g("title");
   const price = Math.round(parseFloat(g("price")) * 100);
   if (!title || !price) return c.json({ error: "title and price are required" }, 400);
-  const category = g("category") || categoryOf(title);
+  const category = g("category") || categoryOf(title) || categoryOf(g("description"));
+  if (!category) return c.json({ error: "couldn't tell the category from the title — pick one from the category menu" }, 400);
   const images: string[] = [];
   for (const f of filesFrom(form)) images.push(await saveUpload(c.env, f));
   for (const u of g("image_urls").split(/\s+/).filter((u) => u.startsWith("http"))) { const m = await mirror(c.env, u); if (m) images.push(m); }
@@ -306,6 +307,8 @@ admin.patch("/candidates/:id", async (c) => {
 admin.get("/products", async (c) => c.json((await c.env.DB.prepare("SELECT * FROM products ORDER BY created_at DESC LIMIT 300").all()).results.map(hydrate)));
 admin.patch("/products/:id", async (c) => {
   const b = await c.req.json<any>();
+  const CATS = ["earrings", "necklaces", "rings", "bracelets", "sets"];
+  if ("category" in b && !CATS.includes(b.category)) return c.json({ error: "unknown category" }, 400);
   const fields = ["title", "description", "price_cents", "compare_at_cents", "category", "status", "featured"].filter((k) => k in b);
   if (!fields.length) return c.json({ ok: true });
   await c.env.DB.prepare(`UPDATE products SET ${fields.map((f) => f + "=?").join(",")}, updated_at=? WHERE id=?`)

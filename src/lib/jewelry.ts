@@ -50,10 +50,33 @@ export function extractStyles(text: string): string[] {
   return [...out].slice(0, 8);
 }
 
-export function categoryOf(title: string): string {
-  const t = title.toLowerCase();
-  for (const [k, v] of Object.entries(NOUNS)) if (new RegExp(`\\b${k}\\b`).test(t)) return v;
-  return "necklaces";
+/**
+ * Product-type words per category. Checked as whole words (so "earrings" never counts as "rings").
+ * "Strong" words name the item itself; "weak" words (chain, pendant, charm) only decide when nothing else does,
+ * because supplier titles say things like "Cuban Chain Bracelet" or "Heart Charm Ring".
+ */
+const CATEGORY_WORDS: { cat: string; strong: RegExp; weak?: RegExp }[] = [
+  { cat: "earrings", strong: /\b(earrings?|ear ?cuffs?|ear ?climbers?|hoops?|huggies?|huggie|studs?|ear ?rings?|dangles?|drop earrings?)\b/g },
+  { cat: "bracelets", strong: /\b(bracelets?|bangles?|anklets?|(?<!ear )cuffs?|wristbands?|arm ?cuffs?)\b/g },
+  { cat: "rings", strong: /\b(rings?|ring ?sets?|band rings?|signet)\b/g },
+  { cat: "necklaces", strong: /\b(necklaces?|chokers?|lockets?)\b/g, weak: /\b(chains?|pendants?|charms?)\b/g },
+];
+
+/**
+ * Detects the category from a title. Returns null if it can't tell.
+ * If several item words appear, the LAST one wins ("Heart Pendant Necklace", "Gold Chain Bracelet").
+ * Two different item types plus "set" ("Necklace and Earrings Set") -> "sets".
+ */
+export function categoryOf(text: string): string | null {
+  const t = " " + text.toLowerCase().replace(/[^a-z0-9 ]/g, " ") + " ";
+  const hits: { cat: string; at: number }[] = [];
+  for (const { cat, strong } of CATEGORY_WORDS)
+    for (const m of t.matchAll(strong)) hits.push({ cat, at: m.index ?? 0 });
+  const cats = new Set(hits.map((h) => h.cat));
+  if (cats.size >= 2 && /\b(sets?|kits?|bundles?)\b/.test(t)) return "sets";
+  if (hits.length) return hits.sort((a, b) => b.at - a.at)[0].cat;
+  for (const { cat, weak } of CATEGORY_WORDS) if (weak && weak.test(t)) return cat;
+  return null;
 }
 
 const JUNK = /\b(20\d\d|new|hot|sale|fashion|trendy|women'?s?|for women|for girls|ladies|female|jewelry|jewellery|gift|gifts|party|wedding|wholesale|korean|simple|style|accessories|high quality|luxury|elegant|personality|creative|fine|aliexpress|cheap|free shipping|\d+ ?pcs?|\d+pc|1pc|pair)\b/gi;
