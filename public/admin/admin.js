@@ -8,6 +8,12 @@ async function api(path, opts = {}) {
   return r.json();
 }
 const patch = (p, body) => api(p, { method: "PATCH", body });
+async function upload(path, formData) {
+  const r = await fetch("/api/admin" + path, { method: "POST", body: formData });
+  if (r.status === 401) { login(); throw new Error("auth"); }
+  return r.json();
+}
+function copyBtn(btn, text) { navigator.clipboard.writeText(text); const t = btn.textContent; btn.textContent = "copied ✓"; setTimeout(() => (btn.textContent = t), 1500); }
 
 function login() {
   root.innerHTML = `<form class="login"><h1 style="margin-bottom:18px">GLINT HQ</h1>
@@ -130,15 +136,79 @@ const tabs = {
   },
   async products(m) {
     const p = await api("/products");
-    m.innerHTML = `<h2>products <button data-job>▶ build listings from approved</button></h2><div class="panel"><table>
-      <tr><th></th><th>title</th><th>price</th><th>cost</th><th>margin</th><th>status</th><th>featured</th><th></th></tr>
-      ${p.map((x) => `<tr><td><img src="${x.images[0] || ""}"></td><td><a href="/p/${x.slug}" target="_blank">${esc(x.title)}</a></td>
+    m.innerHTML = `<h2>products <span><button class="ghost" id="toggleAdd">+ add product</button> <button data-job>▶ build listings from approved</button></span></h2>
+      <form class="panel" id="addForm" style="display:none">
+        <h3>add a product by hand</h3>
+        <p class="note">Fastest way to get products live. Grab the title, price and photos from any supplier page (AliExpress, CJ, Temu…).</p>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:0 14px">
+          <div><label>title *</label><input name="title" required placeholder="chunky gold dome huggies"></div>
+          <div><label>category</label><select name="category"><option value="">auto-detect</option><option>earrings</option><option>necklaces</option><option>rings</option><option>bracelets</option><option>sets</option></select></div>
+          <div><label>sell price ($) *</label><input name="price" type="number" step="0.01" required placeholder="24.99"></div>
+          <div><label>compare-at / "was" price ($)</label><input name="compare_at" type="number" step="0.01" placeholder="34.99"></div>
+          <div><label>your cost incl. shipping ($)</label><input name="cost" type="number" step="0.01" placeholder="6.20"></div>
+          <div><label>supplier</label><select name="supplier"><option value="manual">other / manual</option><option>aliexpress</option><option>cj</option><option>temu</option><option>shein</option><option>alibaba</option></select></div>
+        </div>
+        <label>supplier product link <small>(so you know where to order it)</small></label><input name="supplier_url" placeholder="https://www.aliexpress.com/item/...">
+        <label>description <small>(leave empty to auto-write one)</small></label><textarea name="description" rows="3"></textarea>
+        <label>photos — upload</label><input name="images" type="file" accept="image/*" multiple>
+        <label>…or paste image links <small>(one per line, right-click a supplier photo → copy image address)</small></label><textarea name="image_urls" rows="2"></textarea>
+        <label style="display:flex;gap:8px;align-items:center;color:var(--ink)"><input type="checkbox" name="make_prompts" checked style="width:auto"> make ChatGPT image prompts for this product (model shot, flat lay, ad)</label>
+        <label style="display:flex;gap:8px;align-items:center;color:var(--ink)"><input type="checkbox" name="status" value="draft" style="width:auto"> save as draft (don't show on the site yet)</label>
+        <button style="margin-top:14px">add product</button> <span class="msg"></span>
+      </form>
+      <div class="panel"><table>
+      <tr><th></th><th>title</th><th>price</th><th>cost</th><th>margin</th><th>status</th><th></th></tr>
+      ${p.map((x) => `<tr><td><img src="${x.images[0] || ""}"></td><td><a href="/p/${x.slug}" target="_blank">${esc(x.title)}</a>${x.featured ? " ★" : ""}<br><small style="color:var(--muted)">${x.images.length} photo${x.images.length === 1 ? "" : "s"}${x.supplier_url ? ` · <a href="${esc(x.supplier_url)}" target="_blank" style="color:var(--lilac)">supplier ↗</a>` : ""}</small></td>
         <td><input style="width:90px" value="${(x.price_cents / 100).toFixed(2)}" data-price="${x.id}"></td><td>${money(x.cost_cents)}</td>
-        <td>${Math.round((1 - x.cost_cents / x.price_cents) * 100)}%</td><td><span class="pill ${x.status}">${x.status}</span></td><td>${x.featured ? "★" : ""}</td>
-        <td style="white-space:nowrap">${x.status !== "active" ? `<button data-p="${x.id}" data-s="active">publish</button>` : `<button class="ghost" data-p="${x.id}" data-s="archived">archive</button>`}</td></tr>`).join("")}</table></div>`;
+        <td>${x.cost_cents ? Math.round((1 - x.cost_cents / x.price_cents) * 100) + "%" : "—"}</td><td><span class="pill ${x.status}">${x.status}</span></td>
+        <td style="white-space:nowrap">${x.status !== "active" ? `<button data-p="${x.id}" data-s="active">publish</button>` : `<button class="ghost" data-p="${x.id}" data-s="archived">archive</button>`}
+          <button class="ghost" data-prompts="${x.id}" title="make ChatGPT image prompts">🎨 prompts</button>
+          <label class="b ghost" style="background:transparent;color:var(--ink);border:1px solid var(--line);cursor:pointer">📷 add photos<input type="file" accept="image/*" multiple data-up="${x.id}" hidden></label></td></tr>`).join("") || `<tr><td>no products yet — click <b>+ add product</b> above, or approve candidates in sourcing.</td></tr>`}</table></div>`;
+    const f = m.querySelector("#addForm");
+    m.querySelector("#toggleAdd").onclick = () => (f.style.display = f.style.display === "none" ? "block" : "none");
+    f.onsubmit = async (e) => {
+      e.preventDefault();
+      const msg = f.querySelector(".msg"); msg.textContent = "uploading…"; msg.style.color = "var(--muted)";
+      const r = await upload("/products", new FormData(f));
+      if (r.error) { msg.textContent = r.error; msg.style.color = "var(--red)"; } else tabs.products(m);
+    };
     m.querySelector("[data-job]").onclick = () => api("/jobs/listing", { method: "POST" });
     m.querySelectorAll("[data-p]").forEach((b) => (b.onclick = async () => { await patch("/products/" + b.dataset.p, { status: b.dataset.s }); tabs.products(m); }));
     m.querySelectorAll("[data-price]").forEach((i) => (i.onchange = () => patch("/products/" + i.dataset.price, { price_cents: Math.round(+i.value * 100) })));
+    m.querySelectorAll("[data-prompts]").forEach((b) => (b.onclick = async () => { await api("/image-prompts/product/" + b.dataset.prompts, { method: "POST" }); b.textContent = "✓ see image prompts tab"; }));
+    m.querySelectorAll("[data-up]").forEach((i) => (i.onchange = async () => {
+      const fd = new FormData(); [...i.files].forEach((file) => fd.append("images", file));
+      i.parentElement.firstChild.textContent = "uploading…"; await upload(`/products/${i.dataset.up}/images`, fd); tabs.products(m);
+    }));
+  },
+  async "image prompts"(m) {
+    const items = await api("/image-prompts?status=pending");
+    const label = { model: "👤 model wearing it", flatlay: "🛋 flat lay", ad: "📣 ad image" };
+    m.innerHTML = `<h2>image prompts</h2>
+      <div class="panel guide"><b>Make photos with your own ChatGPT account — no API credits.</b>
+        <ol><li>Click <b>download reference</b> to save the product photo.</li>
+        <li>In ChatGPT, attach that photo, then paste the prompt (<b>copy prompt</b>).</li>
+        <li>Download what ChatGPT makes and drop it in <b>upload result</b>. Model shots become the product's main photo, flat lays get added after, ad images land in the marketing tab.</li></ol></div>
+      <div class="cgrid">${items.map((x) => `<div class="panel" data-card="${x.id}">
+        ${x.ref_image ? `<img src="${x.ref_image}">` : `<p class="note">no product photo yet — add one in products first</p>`}
+        <span class="pill">${label[x.kind] || x.kind}</span> <span class="pill ${x.product_status}">${x.product_status}</span>
+        <h3 style="margin:8px 0">${esc(x.title)}</h3>
+        <textarea rows="6" readonly>${esc(x.prompt)}</textarea>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">
+          <button data-copy="${x.id}">copy prompt</button>
+          ${x.ref_image ? `<a class="b ghost" style="background:transparent;color:var(--ink);border:1px solid var(--line)" href="${x.ref_image}" download>download reference</a>` : ""}
+          <label class="b" style="cursor:pointer">upload result<input type="file" accept="image/*" data-upload="${x.id}" hidden></label>
+          <button class="ghost" data-skip="${x.id}">skip</button>
+        </div></div>`).join("") || `<p class="note">No prompts waiting. They appear automatically when listings are built, or click <b>🎨 prompts</b> on any product.</p>`}</div>`;
+    const byId = Object.fromEntries(items.map((x) => [x.id, x]));
+    m.querySelectorAll("[data-copy]").forEach((b) => (b.onclick = () => copyBtn(b, byId[b.dataset.copy].prompt)));
+    m.querySelectorAll("[data-skip]").forEach((b) => (b.onclick = async () => { await patch("/image-prompts/" + b.dataset.skip, { status: "skipped" }); b.closest("[data-card]").remove(); }));
+    m.querySelectorAll("[data-upload]").forEach((i) => (i.onchange = async () => {
+      const fd = new FormData(); fd.append("image", i.files[0]);
+      i.parentElement.firstChild.textContent = "uploading…";
+      const r = await upload(`/image-prompts/${i.dataset.upload}/upload`, fd);
+      r.ok ? i.closest("[data-card]").remove() : (i.parentElement.firstChild.textContent = "failed — try again");
+    }));
   },
   async orders(m) {
     const o = await api("/orders");
@@ -190,6 +260,7 @@ const tabs = {
       ${field("hashtags", "instagram hashtags to watch", "JSON array")}${field("accounts", "instagram accounts to watch", 'e.g. ["@brand"]')}
       ${field("suppliers", "enabled suppliers", "cj, aliexpress, alibaba, temu, shein")}${field("min_margin", "minimum margin", "0.6 = 60%")}
       ${field("prune_after_days", "archive non-sellers after N days")}${field("prune_min_views", "…once they have at least N views")}
+      ${field("image_mode", "product images", '"manual" = make ChatGPT prompts for you to run · "api" = generate automatically with OpenAI credits')}
       <button style="margin-top:16px">save</button> <span id="ok"></span></form>`;
     m.querySelector("form").onsubmit = async (e) => {
       e.preventDefault();
@@ -201,7 +272,8 @@ const tabs = {
   },
 };
 
-function shell(tab = location.hash.slice(1) || "dashboard") {
+function shell(tab = decodeURIComponent(location.hash.slice(1)) || "dashboard") {
+  if (!tabs[tab]) tab = "dashboard";
   root.innerHTML = `<div class="wrap"><aside><div class="logo">GLINT<span>HQ</span></div>
     ${Object.keys(tabs).map((t) => `<a data-tab="${t}" class="${t === tab ? "on" : ""}">${t}</a>`).join("")}
     <a id="logout" style="margin-top:auto">log out</a></aside><main id="m">loading…</main></div>`;

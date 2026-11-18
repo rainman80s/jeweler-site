@@ -2,7 +2,9 @@ import { Hono } from "hono";
 import { setCookie, deleteCookie } from "hono/cookie";
 import type { Env } from "./env";
 import { ensureBootstrapAdmin, hashPassword, requireAdmin, verifyPassword } from "./lib/auth";
-import { j, logJob, now, uid } from "./lib/util";
+import { j, logJob, now, slugify, uid } from "./lib/util";
+import { categoryOf, templateCopy } from "./lib/jewelry";
+import { mirror, queueImagePrompts } from "./agents/listing";
 import { stripe, verifyStripeSig } from "./integrations/stripe";
 import { fulfillOrder } from "./agents/fulfillment";
 import { JOBS, runCron } from "./agents/scheduler";
@@ -122,6 +124,92 @@ admin.get("/overview", async (c) => {
     c.env.DB.prepare("SELECT * FROM job_runs ORDER BY started_at DESC LIMIT 15").all(),
   ]);
   return c.json({ kpi, funnel: funnel.results, top: top.results.map(hydrate), jobs: jobs.results });
+});
+
+// ---------- Uploads + manual products + ChatGPT image prompts
+async function saveUpload(env: Env, f: File, folder = "u"): Promise<string> {
+  const ext = (f.type.split("/")[1] ?? "jpg").replace("jpeg", "jpg");
+  const key = `${folder}/${uid()}.${ext}`;
+  await env.MEDIA.put(key, f.stream(), { httpMetadata: { contentType: f.type || "image/jpeg" } });
+  return `/img/${key}`;
+}
+const filesFrom = (form: FormData, name = "images") =>
+  (form.getAll(name) as unknown[]).filter((f): f is File => typeof f === "object" && f !== null && "stream" in f && (f as File).size > 0);
+
+admin.post("/products", async (c) => {
+  const form = await c.req.formData();
+  const g = (k: string) => String(form.get(k) ?? "").trim();
+  const title = g("title");
+  const price = Math.round(parseFloat(g("price")) * 100);
+  if (!title || !price) return c.json({ error: "title and price are required" }, 400);
+  const category = g("category") || categoryOf(title);
+  const images: string[] = [];
+  for (const f of filesFrom(form)) images.push(await saveUpload(c.env, f));
+  for (const u of g("image_urls").split(/\s+/).filter((u) => u.startsWith("http"))) { const m = await mirror(c.env, u); if (m) images.push(m); }
+  const id = uid();
+  const desc = g("description") || templateCopy(title, category).description;
+  await c.env.DB.prepare(
+    `INSERT INTO products (id,slug,title,description,price_cents,compare_at_cents,cost_cents,category,tags,images,supplier,supplier_url,status)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`
+  ).bind(id, slugify(title), title, desc, price, g("compare_at") ? Math.round(parseFloat(g("compare_at")) * 100) : null,
+         Math.round((parseFloat(g("cost")) || 0) * 100), category, JSON.stringify([category]), JSON.stringify(images),
+         g("supplier") || "manual", g("supplier_url") || null, g("status") === "draft" ? "draft" : "active").run();
+  if (form.get("make_prompts")) await queueImagePrompts(c.env, id, title, category, images[0] ?? null, ["model", "flatlay", "ad"]);
+  return c.json({ ok: true, id });
+});
+admin.post("/products/:id/images", async (c) => {
+  const id = c.req.param("id");
+  const p = await c.env.DB.prepare("SELECT images FROM products WHERE id=?").bind(id).first<any>();
+  if (!p) return c.notFound();
+  const imgs = j<string[]>(p.images, []);
+  for (const f of filesFrom(await c.req.formData())) imgs.push(await saveUpload(c.env, f));
+  await c.env.DB.prepare("UPDATE products SET images=?, updated_at=? WHERE id=?").bind(JSON.stringify(imgs), now(), id).run();
+  return c.json({ ok: true, images: imgs });
+});
+admin.put("/products/:id/images", async (c) => {
+  const { images } = await c.req.json<{ images: string[] }>();
+  await c.env.DB.prepare("UPDATE products SET images=?, updated_at=? WHERE id=?").bind(JSON.stringify(images ?? []), now(), c.req.param("id")).run();
+  return c.json({ ok: true });
+});
+
+admin.get("/image-prompts", async (c) => {
+  const status = c.req.query("status") ?? "pending";
+  const { results } = await c.env.DB.prepare(
+    `SELECT ip.*, p.title, p.images, p.status AS product_status FROM image_prompts ip JOIN products p ON p.id=ip.product_id
+     WHERE ip.status=? ORDER BY ip.created_at DESC LIMIT 100`).bind(status).all<any>();
+  return c.json(results.map((r) => ({ ...r, images: j(r.images, []), meta: j(r.meta, null) })));
+});
+admin.post("/image-prompts/product/:productId", async (c) => {
+  const p = await c.env.DB.prepare("SELECT id,title,category,images FROM products WHERE id=?").bind(c.req.param("productId")).first<any>();
+  if (!p) return c.notFound();
+  await queueImagePrompts(c.env, p.id, p.title, p.category ?? "necklaces", j<string[]>(p.images, [])[0] ?? null, ["model", "flatlay", "ad"]);
+  return c.json({ ok: true });
+});
+admin.patch("/image-prompts/:id", async (c) => {
+  const { status } = await c.req.json<any>();
+  await c.env.DB.prepare("UPDATE image_prompts SET status=? WHERE id=?").bind(status, c.req.param("id")).run();
+  return c.json({ ok: true });
+});
+// Upload the image you made in ChatGPT: model shots become the lead photo, flat lays go after, ads become creatives.
+admin.post("/image-prompts/:id/upload", async (c) => {
+  const ip = await c.env.DB.prepare("SELECT * FROM image_prompts WHERE id=?").bind(c.req.param("id")).first<any>();
+  if (!ip) return c.notFound();
+  const file = filesFrom(await c.req.formData(), "image")[0];
+  if (!file) return c.json({ error: "no image" }, 400);
+  if (ip.kind === "ad") {
+    const url = await saveUpload(c.env, file, "ads");
+    const meta = j<any>(ip.meta, {}) ?? {};
+    await c.env.DB.prepare("INSERT INTO creatives (id,product_id,kind,platform,body,media_key) VALUES (?,?,?,?,?,?)")
+      .bind(uid(), ip.product_id, "ad", meta.platform ?? "instagram", JSON.stringify(meta), url.replace("/img/", "")).run();
+  } else {
+    const url = await saveUpload(c.env, file, "ai");
+    const p = await c.env.DB.prepare("SELECT images FROM products WHERE id=?").bind(ip.product_id).first<any>();
+    const imgs = j<string[]>(p?.images, []);
+    ip.kind === "model" ? imgs.unshift(url) : imgs.push(url);
+    await c.env.DB.prepare("UPDATE products SET images=?, updated_at=? WHERE id=?").bind(JSON.stringify(imgs), now(), ip.product_id).run();
+  }
+  await c.env.DB.prepare("UPDATE image_prompts SET status='done' WHERE id=?").bind(ip.id).run();
+  return c.json({ ok: true });
 });
 
 // ---------- Admin users

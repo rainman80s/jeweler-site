@@ -113,15 +113,32 @@ const aliexpress: Supplier = {
 };
 
 // ---------- Alibaba / Temu / Shein: no public dropship ordering API -> discovery via Apify, manual fulfillment.
+// Each scraper takes a different input shape; outputs are normalized below.
+const INPUTS: Record<string, (q: string, n: number) => unknown> = {
+  aliexpress: (q, n) => ({ searchQueries: [q], maxProducts: n, country: "US" }),
+  alibaba: (q) => ({ queries: [q], max_pages: 1 }),
+  temu: (q, n) => ({ keyword: q, max_items: n, region: "us" }),
+  shein: (q, n) => ({ queries: [q], maxResultsPerSearch: n }),
+};
+const first = (...v: any[]) => v.find((x) => x !== undefined && x !== null && x !== "");
 async function scrapeVia(env: Env, supplier: string, actor: string, q: string, limit: number): Promise<SupplierProduct[]> {
-  const items = await runActor<any>(env, actor, { search: q, searchTerms: [q], query: q, maxItems: limit, maxProducts: limit });
-  return items.slice(0, limit).map((p) => ({
-    supplier, id: String(p.id ?? p.productId ?? p.goods_id ?? p.url), url: p.url ?? p.productUrl ?? "",
-    title: p.title ?? p.name ?? p.goods_name ?? "", costCents: cents(p.price ?? p.salePrice ?? p.minPrice),
-    shippingCents: cents(p.shippingPrice), rating: parseFloat(p.rating ?? p.averageRating) || undefined,
-    orders: parseInt(p.orders ?? p.sold ?? p.salesCount) || undefined,
-    images: [p.image, p.mainImage, ...(p.images ?? [])].filter((x: any) => typeof x === "string"), raw: p,
-  }));
+  const items = await runActor<any>(env, actor, (INPUTS[supplier] ?? ((q: string, n: number) => ({ query: q, maxItems: n })))(q, limit));
+  return items.slice(0, limit).map((p) => {
+    const imgs = [p.imageUrl, p.image_url, p.image, p.mainImage, ...(p.gallery ?? []), ...(p.images ?? [])]
+      .filter((x: any) => typeof x === "string" && x).map((u: string) => (u.startsWith("//") ? "https:" + u : u));
+    return {
+      supplier,
+      id: String(first(p.productId, p.goods_id, p.id, p.productUrl, p.link_url, p.url)),
+      url: first(p.productUrl, p.link_url, p.link, p.url, ""),
+      title: first(p.title, p.name, p.goods_name, p.subject, ""),
+      costCents: cents(first(p.priceCurrent, p.priceCurrentMin, p.price_str, p.pricing?.sale_price?.amount_usd, p.salePrice, p.minPrice, p.price)),
+      shippingCents: cents(p.shippingPrice),
+      rating: parseFloat(first(p.ratingValue, p.rating, p.averageRating)) || undefined,
+      orders: parseInt(first(p.soldCount, p.sales_num, p.orders, p.sold, p.salesCount, p.reviews_count)) || undefined,
+      images: [...new Set(imgs)] as string[],
+      raw: p,
+    };
+  });
 }
 const scraped = (name: string, actor: string): Supplier => ({
   name, canAutoOrder: false, search: (env, q, l = 20) => scrapeVia(env, name, actor, q, l),

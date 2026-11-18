@@ -69,3 +69,10 @@ Orders that can't auto-place land in **HQ → orders** as `needs_manual`. Temu/S
 - Product variants (sizes/colors) and SKU mapping
 - SEO: per-product server-rendered meta tags + sitemap
 - Image model: switch `generateImage` model name to the newest OpenAI image model you have access to
+
+## Running without OpenAI
+Everything works with no `OPENAI_API_KEY`:
+- **Trends**: captions/hashtags are matched against a jewelry style dictionary (`src/lib/jewelry.ts`).
+- **Listings**: titles are cleaned from the supplier title; descriptions use on-brand templates.
+- **Images**: with `image_mode = "manual"` (default), the system queues ready-to-paste prompts in **HQ → image prompts**. Run them in ChatGPT with the reference photo attached and upload the result — model shots become the lead photo, flat lays are appended, ad images become creatives.
+- **Products → + add product** lets you list anything by hand with uploaded photos or pasted image links.

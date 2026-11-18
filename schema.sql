@@ -78,3 +78,11 @@ INSERT OR IGNORE INTO settings VALUES
  ('max_ship_days', '15'),
  ('prune_after_days', '14'),
  ('prune_min_views', '150');
+
+-- Image prompts: copy into ChatGPT yourself, upload the result back (no API credits)
+CREATE TABLE IF NOT EXISTS image_prompts (
+  id TEXT PRIMARY KEY, product_id TEXT NOT NULL, kind TEXT NOT NULL, -- model|flatlay|ad
+  prompt TEXT NOT NULL, ref_image TEXT, meta TEXT, status TEXT DEFAULT 'pending', -- pending|done|skipped
+  created_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
+INSERT OR IGNORE INTO settings VALUES ('image_mode', '"manual"');

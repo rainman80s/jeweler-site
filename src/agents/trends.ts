@@ -2,6 +2,7 @@ import type { Env } from "../env";
 import { scrapeInstagram } from "../integrations/apify";
 import { chatJSON } from "../integrations/openai";
 import { now, setting, uid } from "../lib/util";
+import { extractStyles } from "../lib/jewelry";
 
 /**
  * 1) Scrape reels for tracked hashtags/accounts
@@ -28,12 +29,19 @@ export async function scanTrends(env: Env) {
 
   const top = scored.slice(0, 40);
   if (!top.length) return { reels: 0 };
-  const { styles } = await chatJSON<{ styles: { keyword: string; idx: number[] }[] }>(env,
-    `You are a jewelry trend analyst. From Instagram reel captions, extract specific, searchable jewelry product styles
-     a dropshipper could source on AliExpress (e.g. "chunky gold dome huggie earrings", "freshwater pearl charm necklace").
-     Return JSON {"styles":[{"keyword":string,"idx":[reel indexes]}]}. 5-15 styles. Skip non-jewelry.`,
-    top.map((r, i) => `[${i}] ${r.caption.slice(0, 300)} ${r.hashtags.join(" ")}`).join("\n"));
-
+  let styles: { keyword: string; idx: number[] }[] = [];
+  if (env.OPENAI_API_KEY) {
+    ({ styles } = await chatJSON<{ styles: { keyword: string; idx: number[] }[] }>(env,
+      `You are a jewelry trend analyst. From Instagram reel captions, extract specific, searchable jewelry product styles
+       a dropshipper could source on AliExpress (e.g. "chunky gold dome huggie earrings", "freshwater pearl charm necklace").
+       Return JSON {"styles":[{"keyword":string,"idx":[reel indexes]}]}. 5-15 styles. Skip non-jewelry.`,
+      top.map((r, i) => `[${i}] ${r.caption.slice(0, 300)} ${r.hashtags.join(" ")}`).join("\n")));
+  } else {
+    // No OpenAI: match captions + hashtags against a jewelry style dictionary
+    const map = new Map<string, number[]>();
+    top.forEach((r, i) => extractStyles(r.caption + " " + r.hashtags.join(" ")).forEach((k) => map.set(k, [...(map.get(k) ?? []), i])));
+    styles = [...map].sort((a, b) => b[1].length - a[1].length).slice(0, 15).map(([keyword, idx]) => ({ keyword, idx }));
+  }
   for (const s of styles ?? []) {
     const kw = s.keyword.toLowerCase().trim();
     const boost = (s.idx ?? []).reduce((a, i) => a + (top[i]?.score ?? 0), 0);

@@ -8,10 +8,10 @@ import type { Env } from "../env";
 export const DEFAULT_ACTORS = {
   instagramHashtag: "apify~instagram-hashtag-scraper",
   instagramProfile: "apify~instagram-scraper",
-  aliexpress: "piotrv1001~aliexpress-listings-scraper",
-  alibaba: "piotrv1001~alibaba-listings-scraper",
-  temu: "amit123~temu-products-scraper",
-  shein: "lexis-solutions~shein-scraper",
+  aliexpress: "devcake~aliexpress-products-scraper",
+  alibaba: "devcake~alibaba-products-scraper",
+  temu: "crw~temu-products-scraper",
+  shein: "omkar-cloud~shein-scraper",
 };
 
 export async function runActor<T = any>(env: Env, actor: string, input: unknown, timeoutSecs = 240): Promise<T[]> {
