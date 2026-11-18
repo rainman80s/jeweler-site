@@ -20,6 +20,10 @@ on:
         description: "Overwrite if the new account's database already has data"
         type: boolean
         default: false
+      images_only:
+        description: "Only copy images (database already moved)"
+        type: boolean
+        default: false
 
 jobs:
   migrate:
@@ -45,4 +49,5 @@ jobs:
           NEW_ACCOUNT_ID: ${{ inputs.new_account_id }}
           OLD_SITE_URL: ${{ inputs.old_site_url }}
           FORCE: ${{ inputs.force }}
+          IMAGES_ONLY: ${{ inputs.images_only }}
         run: ./scripts/migrate-cloudflare.sh
