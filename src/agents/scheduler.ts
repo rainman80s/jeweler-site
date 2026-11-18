@@ -14,15 +14,25 @@ export const JOBS: Record<string, (env: Env) => Promise<unknown>> = {
   marketing: (e) => makeCreatives(e),
 };
 
-const CRON_MAP: Record<string, keyof typeof JOBS> = {
-  "0 */6 * * *": "trends",
-  "30 */6 * * *": "sourcing",
-  "0 */2 * * *": "listing",
-  "0 9 * * *": "optimize",
-  "0 10 * * 1": "marketing",
-};
+/**
+ * Hourly cron -> job plan (UTC hours):
+ *  trends    every 6h  (0, 6, 12, 18)
+ *  sourcing  every 6h  (1, 7, 13, 19)
+ *  listing   every 2h  (odd hours, after sourcing)
+ *  optimize  daily at 09:00
+ *  marketing Mondays at 10:00
+ */
+export function jobsForHour(d: Date): (keyof typeof JOBS)[] {
+  const h = d.getUTCHours();
+  const out: (keyof typeof JOBS)[] = [];
+  if (h % 6 === 0) out.push("trends");
+  if (h % 6 === 1) out.push("sourcing");
+  if (h % 2 === 1) out.push("listing");
+  if (h === 9) out.push("optimize");
+  if (h === 10 && d.getUTCDay() === 1) out.push("marketing");
+  return out;
+}
 
-export async function runCron(cron: string, env: Env) {
-  const job = CRON_MAP[cron];
-  if (job) await logJob(env, job, () => JOBS[job](env));
+export async function runCron(scheduledTime: number, env: Env) {
+  for (const job of jobsForHour(new Date(scheduledTime))) await logJob(env, job, () => JOBS[job](env));
 }

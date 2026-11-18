@@ -2,6 +2,8 @@ name = "jeweler-site"
 main = "src/index.ts"
 compatibility_date = "2024-11-01"
 compatibility_flags = ["nodejs_compat"]
+workers_dev = true
+preview_urls = false
 
 [assets]
 directory = "./public"
@@ -12,21 +14,16 @@ run_worker_first = ["/api/*", "/img/*"]
 [[d1_databases]]
 binding = "DB"
 database_name = "jeweler-db"
-database_id = "REPLACE_WITH_D1_ID"   # wrangler d1 create jeweler-db
+database_id = "9dac0e49-59ca-411c-80c6-9195c5950a01"
 
 [[r2_buckets]]
 binding = "MEDIA"
 bucket_name = "jeweler-media"        # wrangler r2 bucket create jeweler-media
 
-# The autopilot. Each cron maps to a job in src/agents/scheduler.ts
+# The autopilot: ONE hourly cron (free plan allows 5 per account).
+# src/agents/scheduler.ts decides which jobs run each hour.
 [triggers]
-crons = [
-  "0 */6 * * *",   # trend scan (Instagram reels via Apify)
-  "30 */6 * * *",  # supplier sourcing for new trends
-  "0 */2 * * *",   # listing builder (copy + images) for approved candidates
-  "0 9 * * *",     # daily optimizer: prune losers, reprice, promote winners
-  "0 10 * * 1"     # weekly marketing: ad creatives + social captions
-]
+crons = ["0 * * * *"]
 
 [vars]
 STORE_NAME = "GLINT"

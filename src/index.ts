@@ -232,5 +232,5 @@ app.route("/api/admin", admin);
 
 export default {
   fetch: app.fetch,
-  scheduled: (evt: ScheduledController, env: Env, ctx: ExecutionContext) => ctx.waitUntil(runCron(evt.cron, env)),
+  scheduled: (evt: ScheduledController, env: Env, ctx: ExecutionContext) => ctx.waitUntil(runCron(evt.scheduledTime, env)),
 } satisfies ExportedHandler<Env>;

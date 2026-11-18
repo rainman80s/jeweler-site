@@ -21,7 +21,7 @@ storefront analytics ◄── shoppers ◄── storefront ◄─────�
 - **Cloudflare Workers** (Hono) + **Workers Static Assets** for the site
 - **D1** (SQLite) for everything — schema in `schema.sql`
 - **R2** for product/AI images, served at `/img/*`
-- **Cron Triggers** run the autopilot (see `wrangler.toml`)
+- **One hourly Cron Trigger** runs the autopilot; `src/agents/scheduler.ts` decides which jobs run each hour
 - **Apify** for Instagram + marketplace scraping, **OpenAI** for copy and images, **Stripe** for checkout
 
 ## Layout
