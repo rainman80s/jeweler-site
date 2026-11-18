@@ -1,5 +1,5 @@
 import type { Env } from "../env";
-import { DEFAULT_ACTORS, runActor } from "./apify";
+import { DEFAULT_ACTORS } from "./apify";
 
 /** Normalized product from any supplier. */
 export interface SupplierProduct {
@@ -12,7 +12,10 @@ export interface Supplier {
   name: string;
   /** Can we place orders programmatically? If false, orders go to the manual fulfillment queue. */
   canAutoOrder: boolean;
-  search(env: Env, query: string, limit?: number): Promise<SupplierProduct[]>;
+  /** Direct API search (fast). Undefined/null result means "use the Apify actor instead". */
+  search?(env: Env, query: string, limit?: number): Promise<SupplierProduct[] | null>;
+  /** Apify actor used for discovery when there's no direct API. */
+  actor?: string;
   placeOrder?(env: Env, order: DropshipOrder): Promise<{ supplierOrderId: string }>;
 }
 
@@ -93,8 +96,9 @@ const aliexpress: Supplier = {
         orders: parseInt(p.orders) || undefined, images: [p.itemMainPic].filter(Boolean), raw: p,
       }));
     }
-    return scrapeVia(env, "aliexpress", DEFAULT_ACTORS.aliexpress, q, limit);
+    return null; // no API keys -> Apify actor
   },
+  actor: DEFAULT_ACTORS.aliexpress,
   async placeOrder(env, o) {
     if (!env.ALIEXPRESS_ACCESS_TOKEN) throw new Error("AliExpress OAuth access token required for ordering");
     const d = await aeCall(env, "aliexpress.ds.order.create", {
@@ -115,15 +119,18 @@ const aliexpress: Supplier = {
 // ---------- Alibaba / Temu / Shein: no public dropship ordering API -> discovery via Apify, manual fulfillment.
 // Each scraper takes a different input shape; outputs are normalized below.
 const INPUTS: Record<string, (q: string, n: number) => unknown> = {
-  aliexpress: (q, n) => ({ searchQueries: [q], maxProducts: n, country: "US" }),
+  aliexpress: (q, n) => ({ searchQueries: [q], maxProducts: Math.max(50, n), country: "US", sortBy: "orders" }), // actor minimum is 50
   alibaba: (q) => ({ queries: [q], max_pages: 1 }),
   temu: (q, n) => ({ keyword: q, max_items: n, region: "us" }),
   shein: (q, n) => ({ queries: [q], maxResultsPerSearch: n }),
 };
+export const actorInput = (supplier: string, q: string, n = 15) =>
+  (INPUTS[supplier] ?? ((q: string, n: number) => ({ query: q, maxItems: n })))(q, n);
+
 const first = (...v: any[]) => v.find((x) => x !== undefined && x !== null && x !== "");
-async function scrapeVia(env: Env, supplier: string, actor: string, q: string, limit: number): Promise<SupplierProduct[]> {
-  const items = await runActor<any>(env, actor, (INPUTS[supplier] ?? ((q: string, n: number) => ({ query: q, maxItems: n })))(q, limit));
-  return items.slice(0, limit).map((p) => {
+/** Normalizes any marketplace scraper's output into SupplierProduct. */
+export function normalizeScraped(supplier: string, items: any[], limit = 30): SupplierProduct[] {
+  return items.filter((p) => p && !p.error).slice(0, limit).map((p) => {
     const imgs = [p.imageUrl, p.image_url, p.image, p.mainImage, ...(p.gallery ?? []), ...(p.images ?? [])]
       .filter((x: any) => typeof x === "string" && x).map((u: string) => (u.startsWith("//") ? "https:" + u : u));
     return {
@@ -131,7 +138,7 @@ async function scrapeVia(env: Env, supplier: string, actor: string, q: string, l
       id: String(first(p.productId, p.goods_id, p.id, p.productUrl, p.link_url, p.url)),
       url: first(p.productUrl, p.link_url, p.link, p.url, ""),
       title: first(p.title, p.name, p.goods_name, p.subject, ""),
-      costCents: cents(first(p.priceCurrent, p.priceCurrentMin, p.price_str, p.pricing?.sale_price?.amount_usd, p.salePrice, p.minPrice, p.price)),
+      costCents: cents(first(p.priceCurrent, p.priceCurrentMin, p.priceOriginalMin, p.priceOriginal, p.price_str, p.pricing?.sale_price?.amount_usd, p.salePrice, p.minPrice, p.price)),
       shippingCents: cents(p.shippingPrice),
       rating: parseFloat(first(p.ratingValue, p.rating, p.averageRating)) || undefined,
       orders: parseInt(first(p.soldCount, p.sales_num, p.orders, p.sold, p.salesCount, p.reviews_count)) || undefined,
@@ -140,9 +147,7 @@ async function scrapeVia(env: Env, supplier: string, actor: string, q: string, l
     };
   });
 }
-const scraped = (name: string, actor: string): Supplier => ({
-  name, canAutoOrder: false, search: (env, q, l = 20) => scrapeVia(env, name, actor, q, l),
-});
+const scraped = (name: string, actor: string): Supplier => ({ name, canAutoOrder: false, actor });
 
 export const SUPPLIERS: Record<string, Supplier> = {
   cj, aliexpress,

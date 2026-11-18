@@ -86,3 +86,10 @@ CREATE TABLE IF NOT EXISTS image_prompts (
   created_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
 INSERT OR IGNORE INTO settings VALUES ('image_mode', '"manual"');
+
+-- Apify scrapes in flight (results arrive via webhook)
+CREATE TABLE IF NOT EXISTS apify_runs (
+  id TEXT PRIMARY KEY, apify_run_id TEXT, actor TEXT, meta TEXT, status TEXT, -- running|done|failed
+  items INTEGER, summary TEXT,
+  started_at INTEGER NOT NULL DEFAULT (unixepoch()), finished_at INTEGER
+);

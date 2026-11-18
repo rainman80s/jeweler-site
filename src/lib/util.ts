@@ -28,7 +28,7 @@ export async function logJob<T>(env: Env, job: string, fn: () => Promise<T>): Pr
     return out;
   } catch (e: any) {
     await env.DB.prepare("UPDATE job_runs SET status='error', summary=?, finished_at=? WHERE id=?")
-      .bind(String(e?.stack ?? e).slice(0, 4000), now(), id).run();
+      .bind(String(e?.message ?? e).slice(0, 4000), now(), id).run();
     console.error(job, e);
   }
 }

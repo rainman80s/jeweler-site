@@ -5,6 +5,7 @@ import { sourceProducts } from "./sourcing";
 import { buildListings } from "./listing";
 import { optimize } from "./optimizer";
 import { makeCreatives } from "./marketing";
+import { pollStaleRuns } from "./apifyRuns";
 
 export const JOBS: Record<string, (env: Env) => Promise<unknown>> = {
   trends: scanTrends,
@@ -34,5 +35,6 @@ export function jobsForHour(d: Date): (keyof typeof JOBS)[] {
 }
 
 export async function runCron(scheduledTime: number, env: Env) {
+  await pollStaleRuns(env); // pick up any scrape whose webhook was missed
   for (const job of jobsForHour(new Date(scheduledTime))) await logJob(env, job, () => JOBS[job](env));
 }

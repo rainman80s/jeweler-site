@@ -1,20 +1,25 @@
 import type { Env } from "../env";
-import { scrapeInstagram } from "../integrations/apify";
+import { startInstagramScan, type ReelSignal } from "../integrations/apify";
 import { chatJSON } from "../integrations/openai";
 import { now, setting, uid } from "../lib/util";
 import { extractStyles } from "../lib/jewelry";
 
 /**
- * 1) Scrape reels for tracked hashtags/accounts
- * 2) Score each by engagement velocity (engagement per hour since posting)
- * 3) Ask the LLM to extract shoppable style keywords from captions
- * 4) Roll keywords up into `trends` with momentum (decayed running score)
+ * scanTrends: starts Apify Instagram scrapes (returns immediately).
+ * processReels: runs when Apify's webhook says the scrape finished —
+ *  1) score each reel by engagement velocity (engagement per hour since posting)
+ *  2) extract shoppable style keywords (OpenAI if connected, keyword dictionary otherwise)
+ *  3) roll keywords up into `trends` with momentum (decayed running score)
  */
 export async function scanTrends(env: Env) {
   const hashtags = await setting<string[]>(env, "hashtags", []);
   const accounts = await setting<string[]>(env, "accounts", []);
-  const reels = await scrapeInstagram(env, hashtags, accounts);
+  if (!hashtags.length && !accounts.length) throw new Error("no hashtags or accounts set — add some in settings");
+  const runs = await startInstagramScan(env, hashtags, accounts);
+  return { scrapes_started: runs, note: "results arrive in a few minutes via Apify webhook" };
+}
 
+export async function processReels(env: Env, reels: ReelSignal[]) {
   const scored = reels.map((r) => {
     const hours = Math.max(1, (now() - (r.postedAt || now() - 86400)) / 3600);
     const engagement = r.likes + r.comments * 4 + r.views * 0.05;

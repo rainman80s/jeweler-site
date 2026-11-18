@@ -114,14 +114,22 @@ const tabs = {
     m.querySelectorAll("[data-job]").forEach((b) => (b.onclick = async () => { await api("/jobs/" + b.dataset.job, { method: "POST" }); b.textContent = "✓ started"; }));
   },
   async trends(m) {
-    const [t, s] = await Promise.all([api("/trends"), api("/signals")]);
+    const [t, s, runs] = await Promise.all([api("/trends"), api("/signals"), api("/apify-runs")]);
     const max = Math.max(1, ...t.map((x) => x.momentum));
+    const live = runs.filter((r) => r.status === "running" || r.status === "processing");
+    const what = (r) => (r.meta.kind === "instagram" ? "📸 instagram scan" : `🛒 ${r.meta.supplier} · "${esc(r.meta.keyword)}"`);
     m.innerHTML = `<h2>trends <button data-job>▶ scan now</button></h2>
+      <div class="panel"><h3 style="margin-bottom:8px">scrapes ${live.length ? `<span class="pill">${live.length} in progress — this page refreshes itself</span>` : ""}</h3>
+        <table><tr><th>what</th><th>status</th><th>started</th><th>result</th></tr>
+        ${runs.slice(0, 12).map((r) => `<tr><td>${what(r)}</td><td><span class="pill ${r.status === "done" ? "ok" : r.status === "failed" ? "error" : ""}">${r.status}</span></td>
+          <td>${ago(r.started_at)} ago</td><td style="color:var(--muted);max-width:380px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.items != null ? r.items + " items · " : ""}${esc(r.summary || "")}
+          <a href="https://console.apify.com/view/runs/${r.apify_run_id}" target="_blank" style="color:var(--lilac)">apify ↗</a></td></tr>`).join("") || "<tr><td>no scrapes yet — click ▶ scan now</td></tr>"}</table></div>
       <div class="panel"><table><tr><th>style</th><th>momentum</th><th>signals</th><th>status</th><th></th></tr>
       ${t.map((x) => `<tr><td><b>${esc(x.keyword)}</b></td><td style="width:30%"><div class="bar"><i style="width:${(x.momentum / max) * 100}%"></i></div></td><td>${x.signal_count}</td><td><span class="pill">${x.status}</span></td>
         <td>${x.status === "ignored" ? `<button class="ghost" data-t="${x.id}" data-s="new">restore</button>` : `<button class="ghost" data-t="${x.id}" data-s="ignored">ignore</button>`}</td></tr>`).join("")}</table></div>
       <h2>top reels</h2><div class="cgrid">${s.map((r) => `<a class="panel" href="${r.url}" target="_blank"><img src="${r.image_url}" referrerpolicy="no-referrer"><div>❤ ${r.likes} · 💬 ${r.comments} · ▶ ${r.views}</div><small style="color:var(--muted)">${esc(r.caption.slice(0, 120))}</small></a>`).join("")}</div>`;
-    m.querySelector("[data-job]").onclick = () => api("/jobs/trends", { method: "POST" });
+    m.querySelector("[data-job]").onclick = async (e) => { e.target.textContent = "starting…"; await api("/jobs/trends", { method: "POST" }); setTimeout(() => tabs.trends(m), 2500); };
+    if (live.length) setTimeout(() => { if (location.hash === "#trends" && document.body.contains(m)) tabs.trends(m); }, 20000);
     m.querySelectorAll("[data-t]").forEach((b) => (b.onclick = async () => { await patch("/trends/" + b.dataset.t, { status: b.dataset.s }); tabs.trends(m); }));
   },
   async sourcing(m) {

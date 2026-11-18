@@ -2,7 +2,7 @@
 export const MODIFIERS = ["gold", "silver", "pearl", "chunky", "dainty", "minimalist", "dome", "huggie", "charm", "chain", "stacking", "stackable",
   "butterfly", "heart", "star", "moon", "flower", "bow", "y2k", "cross", "initial", "letter", "name", "tennis", "cuban", "rope", "paperclip",
   "beaded", "enamel", "crystal", "rhinestone", "opal", "birthstone", "evil eye", "shell", "drop", "statement", "layered", "twisted", "vintage",
-  "chrome", "heart lock", "snake", "pave", "cz", "zircon", "freshwater pearl", "18k gold", "rose gold"];
+  "chrome", "heart lock", "stacked", "sculptural", "bold", "knotted", "colorful", "pink", "oversized", "chunky gold", "snake", "pave", "cz", "zircon", "freshwater pearl", "18k gold", "rose gold"];
 export const NOUNS: Record<string, string> = {
   earrings: "earrings", earring: "earrings", hoops: "earrings", hoop: "earrings", huggies: "earrings", studs: "earrings", "ear cuff": "earrings",
   necklace: "necklaces", necklaces: "necklaces", choker: "necklaces", pendant: "necklaces", chain: "necklaces",
@@ -18,22 +18,36 @@ const STYLE_NOUNS: [RegExp, string][] = [
   [/bracelets?/, "bracelet"], [/bangles?/, "bangle"], [/anklets?/, "anklet"], [/^rings?$|rings$|^ring(?=stack)/, "rings"],
 ];
 
+const nounOf = (word: string): string | null => {
+  for (const [re, name] of STYLE_NOUNS) if (re.test(word)) return name;
+  return null;
+};
+
+/**
+ * Pulls "modifier + item" styles out of a caption, e.g. "statement earrings", "stacked rings".
+ * Captions: a style word paired with the item named within the next 2 words.
+ * Hashtags: a single squashed tag containing both ("#goldhoops", "#knottednecklace").
+ */
 export function extractStyles(text: string): string[] {
-  const lower = text.toLowerCase().replace(/_/g, " ");
-  // hashtags are single squashed tokens ("#goldhoops"); captions are spaced words
-  const tokens = lower.replace(/[^a-z0-9# ]/g, " ").split(/\s+/).filter(Boolean);
-  const spaced = " " + tokens.map((w) => w.replace(/^#/, "")).join(" ") + " ";
-  const nouns = new Set<string>();
-  for (const tok of tokens) {
-    let rest = tok.replace(/^#/, "");
-    for (const [re, name] of STYLE_NOUNS) if (re.test(rest)) { nouns.add(name); rest = rest.replace(re, " "); }
+  const tokens = text.toLowerCase().replace(/_/g, " ").replace(/[^a-z0-9# ]/g, " ").split(/\s+/).filter(Boolean);
+  const single = MODIFIERS.filter((m) => !m.includes(" "));
+  const out = new Set<string>();
+  const words = tokens.filter((t) => !t.startsWith("#"));
+  for (let i = 0; i < words.length; i++) {
+    const w = words[i].replace(/s$/, "");
+    const mod = single.find((m) => m === words[i] || m === w);
+    if (!mod) continue;
+    for (const nxt of words.slice(i + 1, i + 3)) {
+      const n = nounOf(nxt);
+      if (n && !n.startsWith(mod)) { out.add(`${mod} ${n}`); break; }
+    }
   }
-  const mods = MODIFIERS.filter((m) => spaced.includes(" " + m + " ") || spaced.includes(" " + m + "s ") ||
-    tokens.some((tk) => tk.startsWith("#") && tk.slice(1).startsWith(m.replace(/ /g, ""))));
-  const out: string[] = [];
-  for (const n of [...nouns].slice(0, 3))
-    for (const m of mods.filter((m) => !n.startsWith(m.replace(/s$/, ""))).slice(0, 3)) out.push(`${m} ${n}`);
-  return out;
+  for (const tag of tokens.filter((t) => t.startsWith("#")).map((t) => t.slice(1))) {
+    const n = nounOf(tag);
+    const mod = n && MODIFIERS.find((m) => tag.startsWith(m.replace(/ /g, "")) && !n.startsWith(m));
+    if (n && mod) out.add(`${mod} ${n}`);
+  }
+  return [...out].slice(0, 8);
 }
 
 export function categoryOf(title: string): string {

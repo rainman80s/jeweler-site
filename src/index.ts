@@ -5,6 +5,8 @@ import { ensureBootstrapAdmin, hashPassword, requireAdmin, verifyPassword } from
 import { j, logJob, now, slugify, uid } from "./lib/util";
 import { categoryOf, templateCopy } from "./lib/jewelry";
 import { mirror, queueImagePrompts } from "./agents/listing";
+import { processApifyRun, pollStaleRuns } from "./agents/apifyRuns";
+import { webhookSecret } from "./integrations/apify";
 import { stripe, verifyStripeSig } from "./integrations/stripe";
 import { fulfillOrder } from "./agents/fulfillment";
 import { JOBS, runCron } from "./agents/scheduler";
@@ -93,6 +95,14 @@ app.post("/api/stripe/webhook", async (c) => {
   return c.json({ received: true });
 });
 
+// ---------- Apify calls this when a scrape finishes
+app.post("/api/apify/webhook", async (c) => {
+  const { secret, run } = c.req.query();
+  if (!secret || secret !== (await webhookSecret(c.env))) return c.text("forbidden", 403);
+  c.executionCtx.waitUntil(processApifyRun(c.env, String(run)));
+  return c.json({ ok: true });
+});
+
 // ---------- Auth
 app.post("/api/auth/login", async (c) => {
   await ensureBootstrapAdmin(c.env);
@@ -109,9 +119,24 @@ app.post("/api/auth/logout", async (c) => { deleteCookie(c, "sid", { path: "/" }
 // ---------- Admin API
 const admin = new Hono<{ Bindings: Env; Variables: { userId: string } }>();
 admin.use("*", requireAdmin);
+// Remember the site's public address so Apify webhooks (and cron-started scrapes) know where to call back.
+admin.use("*", async (c, next) => {
+  const origin = new URL(c.req.url).origin;
+  if (!origin.includes("localhost") || !(await c.env.DB.prepare("SELECT 1 FROM settings WHERE key='site_origin'").first()))
+    c.executionCtx.waitUntil(c.env.DB.prepare("INSERT INTO settings (key,value) VALUES ('site_origin',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value WHERE value != excluded.value").bind(JSON.stringify(origin)).run());
+  await next();
+});
+
+admin.get("/apify-runs", async (c) => {
+  c.executionCtx.waitUntil(pollStaleRuns(c.env));
+  const { results } = await c.env.DB.prepare("SELECT * FROM apify_runs ORDER BY started_at DESC LIMIT 30").all<any>();
+  return c.json(results.map((r) => ({ ...r, meta: j(r.meta, {}) })));
+});
 
 admin.get("/overview", async (c) => {
   const since = now() - 30 * 86400;
+  // jobs cut off by the platform never report back — mark them so they don't look "running" forever
+  await c.env.DB.prepare("UPDATE job_runs SET status='error', summary='stopped before finishing (timed out)' WHERE status='running' AND started_at < ?").bind(now() - 900).run();
   const [kpi, funnel, top, jobs] = await Promise.all([
     c.env.DB.prepare(`SELECT (SELECT COUNT(*) FROM products WHERE status='active') active, (SELECT COUNT(*) FROM products WHERE status='draft') drafts,
       (SELECT COUNT(*) FROM candidates WHERE status='pending') pending, (SELECT COUNT(*) FROM trends) trends,
