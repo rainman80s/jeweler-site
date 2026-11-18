@@ -1,0 +1,40 @@
+name = "jeweler-site"
+main = "src/index.ts"
+compatibility_date = "2024-11-01"
+compatibility_flags = ["nodejs_compat"]
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = ["/api/*", "/img/*"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "jeweler-db"
+database_id = "REPLACE_WITH_D1_ID"   # wrangler d1 create jeweler-db
+
+[[r2_buckets]]
+binding = "MEDIA"
+bucket_name = "jeweler-media"        # wrangler r2 bucket create jeweler-media
+
+# The autopilot. Each cron maps to a job in src/agents/scheduler.ts
+[triggers]
+crons = [
+  "0 */6 * * *",   # trend scan (Instagram reels via Apify)
+  "30 */6 * * *",  # supplier sourcing for new trends
+  "0 */2 * * *",   # listing builder (copy + images) for approved candidates
+  "0 9 * * *",     # daily optimizer: prune losers, reprice, promote winners
+  "0 10 * * 1"     # weekly marketing: ad creatives + social captions
+]
+
+[vars]
+STORE_NAME = "GLINT"
+CURRENCY = "usd"
+DEFAULT_MARKUP = "3.2"
+AUTO_PUBLISH = "false"   # true = autopilot lists without human approval
+
+# Secrets (wrangler secret put NAME):
+# APIFY_TOKEN, OPENAI_API_KEY, STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET,
+# ALIEXPRESS_APP_KEY, ALIEXPRESS_APP_SECRET, ALIEXPRESS_ACCESS_TOKEN,
+# CJ_API_KEY, ADMIN_BOOTSTRAP_EMAIL, ADMIN_BOOTSTRAP_PASSWORD

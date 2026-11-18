@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>GLINT — jewelry that's giving</title>
+<meta name="description" content="Trend-first jewelry. Stack it, layer it, flex it.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<div class="promo"><div class="marquee"><span>free shipping over $35 ✦ new drops every week ✦ 30-day returns ✦ hypoallergenic ✦ free shipping over $35 ✦ new drops every week ✦ 30-day returns ✦ hypoallergenic ✦</span></div></div>
+<header class="nav">
+  <a href="/" data-link class="logo">GLINT<sup>✦</sup></a>
+  <nav>
+    <a href="/shop" data-link>shop all</a>
+    <a href="/shop?category=earrings" data-link>earrings</a>
+    <a href="/shop?category=necklaces" data-link>necklaces</a>
+    <a href="/shop?category=rings" data-link>rings</a>
+  </nav>
+  <a href="/cart" data-link class="cart-btn">bag <span id="cart-count">0</span></a>
+</header>
+<main id="app"></main>
+<footer class="foot">
+  <div class="logo big">GLINT✦</div>
+  <form class="news" onsubmit="event.preventDefault();this.innerHTML='<b>you\'re in ✦</b>'"><input type="email" placeholder="get drops first — your email" required><button>join</button></form>
+  <p>© <span id="yr"></span> GLINT. made for the group chat.</p>
+</footer>
+<script src="/app.js" type="module"></script>
+</body>
+</html>
